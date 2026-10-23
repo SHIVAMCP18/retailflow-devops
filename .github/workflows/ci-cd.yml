@@ -1,6 +1,6 @@
 # CI/CD pipeline
 #   every push and pull request: 1 test -> 2 security scan -> 3 build + scan image -> 4 Kubernetes test
-#   push to main also:           push the image to GitHub Container Registry -> 5 deploy to Google Cloud
+#   push to main also:           push the image to GitHub Container Registry -> 5 deploy to Render (cloud)
 name: CI/CD
 
 on:
@@ -87,42 +87,44 @@ jobs:
           ./scripts/smoke.sh http://localhost:8080
 
   deploy:
-    name: 5. Deploy to Google Cloud
+    name: 5. Deploy to the cloud (Render)
     needs: [build, kubernetes]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     env:
-      VM_HOST: ${{ secrets.VM_HOST }}
-      VM_USER: ${{ secrets.VM_USER }}
+      RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+      API: https://api.render.com/v1
     steps:
       - uses: actions/checkout@v4
-      - name: Skip if the cloud server is not set up yet
+      - name: Skip if the cloud service is not set up yet
         id: check
         run: |
-          if [ -z "$VM_HOST" ]; then
-            echo "::warning::VM_HOST secret is not set, so deployment was skipped (see README)."
+          if [ -z "$RENDER_API_KEY" ] || [ -z "$RENDER_SERVICE_ID" ]; then
+            echo "::warning::RENDER_API_KEY / RENDER_SERVICE_ID secrets are not set, so deployment was skipped (see README)."
             echo "ready=false" >> "$GITHUB_OUTPUT"
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
-      - name: Copy the files and start the new version
+      - name: Deploy this exact commit and wait until it is live
         if: steps.check.outputs.ready == 'true'
         run: |
-          mkdir -p ~/.ssh && echo "${{ secrets.VM_SSH_KEY }}" > ~/.ssh/key && chmod 600 ~/.ssh/key
-          ssh-keyscan -H "$VM_HOST" >> ~/.ssh/known_hosts
-          scp -i ~/.ssh/key docker-compose.yml Caddyfile "$VM_USER@$VM_HOST:/tmp/"
-          ssh -i ~/.ssh/key "$VM_USER@$VM_HOST" "
-            cd /opt/retailflow &&
-            sudo mv /tmp/docker-compose.yml /tmp/Caddyfile . &&
-            sudo sed -i 's|^TAG=.*|TAG=${{ github.sha }}|; s|^IMAGE=.*|IMAGE=${IMAGE,,}|' .env &&
-            echo '${{ secrets.GITHUB_TOKEN }}' | sudo docker login ghcr.io -u '${{ github.actor }}' --password-stdin &&
-            sudo docker compose pull &&
-            sudo docker compose up -d --no-build --remove-orphans &&
-            sudo docker logout ghcr.io &&
-            sudo docker image prune -f"
+          auth=(-H "Authorization: Bearer $RENDER_API_KEY" -H "Content-Type: application/json")
+          deploy=$(curl -fsS -X POST "${auth[@]}" "$API/services/$RENDER_SERVICE_ID/deploys" -d "{\"commitId\":\"$GITHUB_SHA\"}" | jq -r .id)
+          echo "Started deploy $deploy for commit $GITHUB_SHA"
+          for _ in $(seq 1 90); do
+            status=$(curl -fsS "${auth[@]}" "$API/services/$RENDER_SERVICE_ID/deploys/$deploy" | jq -r .status)
+            echo "status: $status"
+            case "$status" in
+              live) break ;;
+              *failed|canceled|deactivated) echo "::error::Deploy ended with status $status"; exit 1 ;;
+            esac
+            sleep 10
+          done
+          [ "$status" = live ] || { echo "::error::Deploy did not finish in 15 minutes"; exit 1; }
       - name: Check the live website
         if: steps.check.outputs.ready == 'true'
         run: |
-          SITE=$(ssh -i ~/.ssh/key "$VM_USER@$VM_HOST" "sudo grep ^SITE_ADDRESS= /opt/retailflow/.env | cut -d= -f2")
-          ./scripts/smoke.sh "https://$SITE"
-          echo "### Live at https://$SITE" >> "$GITHUB_STEP_SUMMARY"
+          url=$(curl -fsS -H "Authorization: Bearer $RENDER_API_KEY" "$API/services/$RENDER_SERVICE_ID" | jq -r .serviceDetails.url)
+          ./scripts/smoke.sh "$url"
+          echo "### Live at $url" >> "$GITHUB_STEP_SUMMARY"

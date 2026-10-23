@@ -17,7 +17,10 @@ app.get('/health', async (_, res) => {
 });
 
 // Which version is running and on which server/pod (shows the CI/CD deploy and Kubernetes replicas).
-app.get('/api/info', (_, res) => res.json({ version: process.env.APP_VERSION || 'dev', server: os.hostname() }));
+app.get('/api/info', (_, res) => res.json({
+  version: process.env.APP_VERSION || process.env.RENDER_GIT_COMMIT || 'dev',
+  server: os.hostname()
+}));
 
 app.get('/api/products', async (_, res) => {
   const { rows } = await db.query('SELECT id, name, price::float AS price, stock FROM products ORDER BY id');
@@ -89,7 +92,8 @@ async function start() {
     await db.query(`INSERT INTO products (name, price, stock) VALUES
       ('Wireless keyboard', 1499, 25), ('Noise-cancelling headset', 3999, 10), ('Desk lamp', 899, 15)`);
   }
-  const server = app.listen(8080, () => log('RetailFlow listening on port 8080'));
+  const port = Number(process.env.PORT || 8080); // cloud platforms like Render set PORT
+  const server = app.listen(port, () => log(`RetailFlow listening on port ${port}`));
   // Graceful shutdown: finish open requests when Docker/Kubernetes stops the container.
   process.on('SIGTERM', () => server.close(() => db.end().then(() => process.exit(0))));
 }

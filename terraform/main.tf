@@ -1,74 +1,72 @@
-# Creates the RetailFlow server on Google Cloud (Always Free tier):
-#   - one e2-micro VM (Debian 12) with a 30 GB standard disk
-#   - firewall rules for SSH (22) and the website (80, 443)
-# On first boot, startup.sh installs Docker and prepares the app folder.
+# Infrastructure as Code: creates RetailFlow on Render.com (free plan, no credit card).
+#   - a free PostgreSQL database
+#   - a free web service that builds app/Dockerfile from the GitHub repo
+#
+# Authentication comes from environment variables, never from this file:
+#   export RENDER_API_KEY=...    (Render dashboard -> Account Settings -> API Keys)
+#   export RENDER_OWNER_ID=...   (your workspace ID, starts with "tea-" or "usr-")
 
 terraform {
   required_version = ">= 1.5"
   required_providers {
-    google = { source = "hashicorp/google", version = "~> 6.0" }
+    render = { source = "render-oss/render", version = "~> 1.9" }
   }
 }
 
-provider "google" {
-  project = var.project_id
-  region  = var.region
-  zone    = var.zone
+provider "render" {
+  # Deployments are triggered by the CI/CD pipeline after the tests pass, not by Terraform.
+  skip_deploy_after_service_update = true
 }
 
-# The Compute Engine API must be switched on before a VM can be created.
-resource "google_project_service" "compute" {
-  service            = "compute.googleapis.com"
-  disable_on_destroy = false
+variable "region" {
+  description = "Render region (singapore is closest to India)"
+  type        = string
+  default     = "singapore"
 }
 
-resource "google_compute_firewall" "web" {
-  name          = "retailflow-allow-web"
-  network       = "default"
-  source_ranges = ["0.0.0.0/0"]
-  target_tags   = ["retailflow"]
-  allow {
-    protocol = "tcp"
-    ports    = ["80", "443"]
-  }
-  depends_on = [google_project_service.compute]
+variable "repo_url" {
+  description = "Public GitHub repository that Render builds from"
+  type        = string
+  default     = "https://github.com/SHIVAMCP18/retailflow-devops"
 }
 
-resource "google_compute_firewall" "ssh" {
-  name          = "retailflow-allow-ssh"
-  network       = "default"
-  source_ranges = var.ssh_source_ranges # GitHub Actions deploys over SSH, so this is open by default; login is key-only
-  target_tags   = ["retailflow"]
-  allow {
-    protocol = "tcp"
-    ports    = ["22"]
-  }
-  depends_on = [google_project_service.compute]
+resource "render_postgres" "db" {
+  name          = "retailflow-db"
+  plan          = "free"
+  region        = var.region
+  version       = "16"
+  database_name = "retailflow"
+  database_user = "retailflow"
 }
 
-resource "google_compute_instance" "server" {
-  name         = "retailflow"
-  machine_type = "e2-micro" # Always Free in us-west1, us-central1 and us-east1
-  tags         = ["retailflow"]
+resource "render_web_service" "app" {
+  name              = "retailflow"
+  plan              = "free"
+  region            = var.region
+  health_check_path = "/health"
 
-  boot_disk {
-    initialize_params {
-      image = "debian-cloud/debian-12"
-      size  = 30            # GB, the free-tier limit
-      type  = "pd-standard" # standard disk is the free one
+  runtime_source = {
+    docker = {
+      repo_url        = var.repo_url
+      branch          = "main"
+      context         = "./app"
+      dockerfile_path = "./app/Dockerfile"
+      auto_deploy     = false # the pipeline deploys only commits that passed all checks
     }
   }
 
-  network_interface {
-    network = "default"
-    access_config {} # gives the VM a public IP address
+  env_vars = {
+    # Private network address of the database; the password never appears in Git
+    DATABASE_URL = { value = render_postgres.db.connection_info.internal_connection_string }
   }
+}
 
-  metadata = {
-    # The deploy user and its public key. The private key goes into GitHub Secrets.
-    ssh-keys = "${var.ssh_user}:${file(var.ssh_public_key_file)}"
-  }
-  metadata_startup_script = file("${path.module}/startup.sh")
+output "service_id" {
+  description = "Put this in the RENDER_SERVICE_ID GitHub secret"
+  value       = render_web_service.app.id
+}
 
-  depends_on = [google_project_service.compute]
+output "website" {
+  description = "Public link to the store"
+  value       = render_web_service.app.url
 }
