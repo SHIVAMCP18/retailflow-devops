@@ -18,9 +18,18 @@ check "products list" "$(code GET /api/products)" 200
 check "invalid product is rejected" "$(code POST /api/products '{"name":"x","price":-1,"stock":1}')" 400
 ID=$(curl -sk -X POST "$BASE/api/products" -H 'Content-Type: application/json' -d '{"name":"Test monitor","price":9999.5,"stock":2}' | field id)
 [ -n "$ID" ] && check "add a product" ok ok || check "add a product" missing ok
-check "place an order" "$(code POST /api/orders "{\"productId\":$ID,\"quantity\":2}")" 201
+check "place an order" "$(code POST /api/orders "{\"customer\":\"Smoke test\",\"productId\":$ID,\"quantity\":2}")" 201
 check "order more than the stock is refused" "$(code POST /api/orders "{\"productId\":$ID,\"quantity\":1}")" 409
 check "orders list" "$(code GET /api/orders)" 200
+check "restock the product" "$(code PATCH /api/products/$ID '{"stock":5}')" 200
+ID2=$(curl -sk -X POST "$BASE/api/products" -H 'Content-Type: application/json' -d '{"name":"Test cable","price":199,"stock":3}' | field id)
+ORDER=$(curl -sk -X POST "$BASE/api/orders" -H 'Content-Type: application/json' \
+  -d "{\"customer\":\"Smoke test\",\"items\":[{\"productId\":$ID,\"quantity\":1},{\"productId\":$ID2,\"quantity\":1}]}" | field id)
+[ -n "$ORDER" ] && check "order with two products" ok ok || check "order with two products" missing ok
+check "order details" "$(code GET /api/orders/$ORDER)" 200
+check "too much of one product cancels the whole order" "$(code POST /api/orders "{\"customer\":\"Smoke test\",\"items\":[{\"productId\":$ID2,\"quantity\":1},{\"productId\":$ID,\"quantity\":99}]}")" 409
+check "admin stats" "$(code GET /api/stats)" 200
+check "remove the test products" "$(code DELETE /api/products/$ID)$(code DELETE /api/products/$ID2)" 204204
 
 echo "Result: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

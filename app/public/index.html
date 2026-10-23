@@ -4,44 +4,37 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>RetailFlow</title>
+  <meta name="description" content="RetailFlow, a small online store deployed with Docker, Kubernetes, Terraform and GitHub Actions">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f46e5'/%3E%3Ctext x='16' y='22' font-family='Arial' font-weight='700' font-size='17' fill='white' text-anchor='middle'%3ER%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header>
-    <h1>RetailFlow</h1>
-    <p>A small online store</p>
-  </header>
+  <div class="layout">
+    <aside class="sidebar">
+      <a class="brand" href="#/shop"><span class="logo">R</span> RetailFlow</a>
+      <nav id="nav">
+        <a href="#/shop" data-page="shop"><svg data-icon="shop"></svg> Shop <span class="badge soft" id="cart-badge" hidden></span></a>
+        <a href="#/orders" data-page="orders"><svg data-icon="orders"></svg> Orders</a>
+        <a href="#/admin" data-page="admin"><svg data-icon="admin"></svg> Admin</a>
+        <a href="#/devops" data-page="devops"><svg data-icon="system"></svg> How it's built</a>
+      </nav>
+      <div class="server-box" id="server-box">
+        <div class="row"><span class="dot" id="status-dot"></span> <strong id="status-text">Connecting...</strong></div>
+        <small class="muted">Version <span class="mono" id="side-version">...</span></small>
+        <small class="muted">Server <span class="mono" id="side-server">...</span></small>
+      </div>
+    </aside>
 
-  <main>
-    <section class="card">
-      <h2>Products</h2>
-      <table id="products">
-        <thead><tr><th>Product</th><th>Price</th><th>In stock</th><th></th></tr></thead>
-        <tbody></tbody>
-      </table>
+    <main class="content" id="view"></main>
+
+    <section class="apilog" id="apilog">
+      <button class="apilog-toggle" id="apilog-toggle">
+        <span class="pulse"></span> Request log <span class="muted" id="apilog-count">· 0 API calls</span><span class="chev" id="apilog-chev">Show</span>
+      </button>
+      <div class="apilog-body" id="apilog-body" hidden></div>
     </section>
-
-    <section class="card">
-      <h2>Add a product</h2>
-      <form id="add-product">
-        <input name="name" placeholder="Name" required>
-        <input name="price" type="number" min="0" step="0.01" placeholder="Price (Rs)" required>
-        <input name="stock" type="number" min="0" step="1" placeholder="Stock" required>
-        <button>Add</button>
-      </form>
-    </section>
-
-    <section class="card">
-      <h2>Recent orders</h2>
-      <table id="orders">
-        <thead><tr><th>#</th><th>Product</th><th>Qty</th><th>Total</th><th>When</th></tr></thead>
-        <tbody></tbody>
-      </table>
-    </section>
-  </main>
-
-  <p id="message" role="status"></p>
-  <footer>Version <span id="version">…</span> · served by <span id="server">…</span></footer>
+  </div>
+  <div class="toast" id="toast" role="status" hidden></div>
   <script src="app.js"></script>
 </body>
 </html>

@@ -15,11 +15,22 @@ with no credit card needed.
 
 Locally the same app runs with Docker Compose (app + PostgreSQL + Caddy) or on Kubernetes.
 
+## The website
+
+| Page | What it shows |
+|---|---|
+| **Shop** | Product catalogue with categories and search, a cart, and "Place order". All products in the cart are reserved in one PostgreSQL transaction |
+| **Orders** | All orders, and a page for each order with its items, total, customer and the server/pod that saved it |
+| **Admin** | Revenue, orders, units sold, low-stock count, best sellers; add products, change stock, remove products |
+| **How it's built** | Live status of this deployment (health, database latency, deployed commit, platform, server/pod, uptime), the CI/CD pipeline, and each DevOps part with links to its files |
+
+The **Request log** bar at the bottom lists every API call the page makes, with its status, time and the server that answered.
+
 ## How each requirement is met
 
 | Requirement | Marks | Where |
 |---|---|---|
-| **Microservices** | 3 | The app is an independent, stateless service with its own database, a REST API (`/api/products`, `/api/orders`), a health endpoint and graceful shutdown. It runs as separate containers (app, database, proxy) that talk over the network, and it scales to several replicas on Kubernetes (`k8s/app.yaml`, 2 replicas). |
+| **Microservices** | 3 | The app is an independent, stateless service with its own database, a REST API (`/api/products`, `/api/orders`, `/api/stats`, `/api/info`), a health endpoint and graceful shutdown. It runs as separate containers (app, database, proxy) that talk over the network, and it scales to several replicas on Kubernetes (`k8s/app.yaml`, 2 replicas). |
 | **Docker** | 4 | `app/Dockerfile` (small Alpine image, non-root user, health check) and `docker-compose.yml` (app + PostgreSQL + Caddy, volumes, health checks). One command runs everything. |
 | **IaC** | 2 | `terraform/main.tf` uses Render's official Terraform provider to create the cloud web service (built from `app/Dockerfile`) and a managed PostgreSQL database, and connects them. `terraform apply` / `terraform destroy`. |
 | **Kubernetes** | 2 | `k8s/`: Namespace, Deployment (2 replicas, probes, resource limits, non-root), StatefulSet with a persistent volume for PostgreSQL, Services, and the password stored as a Secret. Tested automatically on every push in a temporary `kind` cluster. |
@@ -96,13 +107,14 @@ is deleted after 30 days. Run `terraform apply` again to create a new one.
 | 4. Kubernetes test | creates a `kind` cluster, runs `k8s/deploy.sh`, runs `scripts/smoke.sh` against it | the app doesn't work on Kubernetes |
 | 5. Deploy | calls the Render API to deploy this commit, waits until the deploy is `live`, then runs `smoke.sh` against the public URL | the deploy fails or the live site doesn't work |
 
-The website footer shows the running version (the commit SHA), so you can prove that a new push was deployed.
+The website's sidebar and the "How it's built" page show the running version (the commit SHA), so you can prove that a new push was deployed.
 
 ## Project layout
 
 ```
 app/                     the service: Node.js + Express API and the website (public/)
   src/server.js          API + database
+  public/                the website (plain HTML, CSS and JavaScript, no build step)
   src/validation.js      input checks (unit-tested)
   test/                  unit tests
   Dockerfile
