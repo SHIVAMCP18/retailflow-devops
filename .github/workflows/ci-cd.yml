@@ -1,0 +1,128 @@
+# CI/CD pipeline
+#   every push and pull request: 1 test -> 2 security scan -> 3 build + scan image -> 4 Kubernetes test
+#   push to main also:           push the image to GitHub Container Registry -> 5 deploy to Google Cloud
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/retailflow
+
+jobs:
+  test:
+    name: 1. Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - name: Install and run unit tests
+        working-directory: app
+        run: npm ci && npm test
+
+  security:
+    name: 2. Security scan (DevSecOps)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Gitleaks - no passwords or keys committed to Git
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Trivy - vulnerable dependencies (fails on CRITICAL)
+        uses: aquasecurity/trivy-action@0.28.0
+        with: { scan-type: fs, severity: CRITICAL, ignore-unfixed: true, exit-code: "1" }
+      - name: Trivy - misconfigurations in Dockerfile, Kubernetes and Terraform (report only)
+        uses: aquasecurity/trivy-action@0.28.0
+        with: { scan-type: config, severity: "HIGH,CRITICAL", exit-code: "0" }
+
+  build:
+    name: 3. Build and scan the Docker image
+    needs: [test, security]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Image name must be lowercase for GHCR
+        run: echo "IMAGE=${IMAGE,,}" >> "$GITHUB_ENV"
+      - name: Build the image
+        run: docker build -t "$IMAGE:${{ github.sha }}" -t "$IMAGE:latest" app
+      - name: Trivy - scan the image (fails on CRITICAL)
+        uses: aquasecurity/trivy-action@0.28.0
+        with: { image-ref: "${{ env.IMAGE }}:${{ github.sha }}", severity: CRITICAL, ignore-unfixed: true, exit-code: "1" }
+      - name: Push to GitHub Container Registry (main branch only)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker push "$IMAGE:${{ github.sha }}"
+          docker push "$IMAGE:latest"
+
+  kubernetes:
+    name: 4. Test on Kubernetes (kind)
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the image
+        run: docker build -t ghcr.io/shivamcp18/retailflow:latest app
+      - name: Create a temporary Kubernetes cluster
+        uses: helm/kind-action@v1
+        with: { cluster_name: retailflow }
+      - name: Load the image into the cluster
+        run: kind load docker-image ghcr.io/shivamcp18/retailflow:latest --name retailflow
+      - name: Deploy with kubectl
+        run: ./k8s/deploy.sh
+      - name: Test the deployed app
+        run: |
+          kubectl -n retailflow port-forward svc/app 8080:8080 &
+          sleep 5
+          ./scripts/smoke.sh http://localhost:8080
+
+  deploy:
+    name: 5. Deploy to Google Cloud
+    needs: [build, kubernetes]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      VM_HOST: ${{ secrets.VM_HOST }}
+      VM_USER: ${{ secrets.VM_USER }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Skip if the cloud server is not set up yet
+        id: check
+        run: |
+          if [ -z "$VM_HOST" ]; then
+            echo "::warning::VM_HOST secret is not set, so deployment was skipped (see README)."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Copy the files and start the new version
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          mkdir -p ~/.ssh && echo "${{ secrets.VM_SSH_KEY }}" > ~/.ssh/key && chmod 600 ~/.ssh/key
+          ssh-keyscan -H "$VM_HOST" >> ~/.ssh/known_hosts
+          scp -i ~/.ssh/key docker-compose.yml Caddyfile "$VM_USER@$VM_HOST:/tmp/"
+          ssh -i ~/.ssh/key "$VM_USER@$VM_HOST" "
+            cd /opt/retailflow &&
+            sudo mv /tmp/docker-compose.yml /tmp/Caddyfile . &&
+            sudo sed -i 's|^TAG=.*|TAG=${{ github.sha }}|; s|^IMAGE=.*|IMAGE=${IMAGE,,}|' .env &&
+            echo '${{ secrets.GITHUB_TOKEN }}' | sudo docker login ghcr.io -u '${{ github.actor }}' --password-stdin &&
+            sudo docker compose pull &&
+            sudo docker compose up -d --no-build --remove-orphans &&
+            sudo docker logout ghcr.io &&
+            sudo docker image prune -f"
+      - name: Check the live website
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          SITE=$(ssh -i ~/.ssh/key "$VM_USER@$VM_HOST" "sudo grep ^SITE_ADDRESS= /opt/retailflow/.env | cut -d= -f2")
+          ./scripts/smoke.sh "https://$SITE"
+          echo "### Live at https://$SITE" >> "$GITHUB_STEP_SUMMARY"

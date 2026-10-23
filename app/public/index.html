@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RetailFlow</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>RetailFlow</h1>
+    <p>A small online store</p>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>Products</h2>
+      <table id="products">
+        <thead><tr><th>Product</th><th>Price</th><th>In stock</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>Add a product</h2>
+      <form id="add-product">
+        <input name="name" placeholder="Name" required>
+        <input name="price" type="number" min="0" step="0.01" placeholder="Price (Rs)" required>
+        <input name="stock" type="number" min="0" step="1" placeholder="Stock" required>
+        <button>Add</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Recent orders</h2>
+      <table id="orders">
+        <thead><tr><th>#</th><th>Product</th><th>Qty</th><th>Total</th><th>When</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </main>
+
+  <p id="message" role="status"></p>
+  <footer>Version <span id="version">…</span> · served by <span id="server">…</span></footer>
+  <script src="app.js"></script>
+</body>
+</html>

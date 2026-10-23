@@ -1,0 +1,11 @@
+# Caddy sits in front of the app. With a real hostname (on the cloud VM) it gets
+# a free HTTPS certificate from Let's Encrypt automatically.
+{$SITE_ADDRESS::80} {
+	encode gzip
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		-Server
+	}
+	reverse_proxy app:8080
+}

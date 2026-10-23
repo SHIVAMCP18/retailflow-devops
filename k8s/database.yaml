@@ -1,0 +1,30 @@
+# PostgreSQL with a persistent volume, so data survives pod restarts.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: { name: db, namespace: retailflow }
+spec:
+  serviceName: db
+  replicas: 1
+  selector: { matchLabels: { app: db } }
+  template:
+    metadata: { labels: { app: db } }
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          env:
+            - { name: POSTGRES_DB, value: retailflow }
+            - { name: POSTGRES_PASSWORD, valueFrom: { secretKeyRef: { name: retailflow-secret, key: POSTGRES_PASSWORD } } }
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+          ports: [{ containerPort: 5432 }]
+          readinessProbe: { exec: { command: ["pg_isready", "-U", "postgres"] }, periodSeconds: 5 }
+          resources: { requests: { memory: 64Mi, cpu: 50m }, limits: { memory: 256Mi } }
+          volumeMounts: [{ name: data, mountPath: /var/lib/postgresql/data }]
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec: { accessModes: [ReadWriteOnce], resources: { requests: { storage: 1Gi } } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: db, namespace: retailflow }
+spec: { selector: { app: db }, ports: [{ port: 5432 }] }
