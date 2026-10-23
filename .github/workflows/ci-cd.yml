@@ -21,7 +21,7 @@ jobs:
     name: 1. Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with: { node-version: "22" }
       - name: Install and run unit tests
@@ -32,7 +32,7 @@ jobs:
     name: 2. Security scan (DevSecOps)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { fetch-depth: 0 }
       - name: Gitleaks - no passwords or keys committed to Git
         uses: gitleaks/gitleaks-action@v2
@@ -50,7 +50,7 @@ jobs:
     needs: [test, security]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Image name must be lowercase for GHCR
         run: echo "IMAGE=${IMAGE,,}" >> "$GITHUB_ENV"
       - name: Build the image
@@ -70,7 +70,7 @@ jobs:
     needs: [test]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build the image
         run: docker build -t ghcr.io/shivamcp18/retailflow:latest app
       - name: Create a temporary Kubernetes cluster
@@ -96,7 +96,7 @@ jobs:
       RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
       API: https://api.render.com/v1
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Skip if the cloud service is not set up yet
         id: check
         run: |
