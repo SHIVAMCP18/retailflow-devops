@@ -1,5 +1,5 @@
 # The RetailFlow app: 2 replicas behind one Service. Refresh the page and the
-# footer shows which pod answered.
+# sidebar shows which pod answered.
 apiVersion: apps/v1
 kind: Deployment
 metadata: { name: app, namespace: retailflow }
