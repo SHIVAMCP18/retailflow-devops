@@ -57,7 +57,7 @@ Open **http://localhost:8080**. Test it with `./scripts/smoke.sh`. Stop with `do
    ./k8s/deploy.sh
    kubectl -n retailflow get pods
    ```
-3. Open **http://localhost:8080**. Refresh a few times: the footer shows which of the 2 pods answered.
+3. Open **http://localhost:8080**. Refresh a few times: the sidebar and the "How it's built" page show which of the 2 pods answered.
 
 Remove it with `kubectl delete namespace retailflow`.
 
